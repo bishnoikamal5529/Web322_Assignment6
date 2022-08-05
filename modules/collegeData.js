@@ -128,11 +128,13 @@ module.exports.addStudent = function (studentData) {
                 studentData[values] = null; 
             }
         }
-        Student.create().then(function(){
-            resolve("Student creation was successfull.");
-        }).catch(function(){
-            reject("Unable to Create Student");
-        });
+        sequelize.sync().then(function(){
+            Student.create().then(function(){
+                resolve("Student creation was successfull.");
+            }).catch(function(){
+                reject("Unable to Create Student");
+            });
+        });       
     });
 };
 
