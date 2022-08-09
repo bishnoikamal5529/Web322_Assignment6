@@ -1,7 +1,16 @@
+/*********************************************************************************
+* WEB322 – Assignment 06
+* I declare that this assignment is my own work in accordance with Seneca Academic Policy. No part of this
+* assignment has been copied manually or electronically from any other source (including web sites) or
+* distributed to other students. *
+* Name: Kamal Suthar Student ID: 164278194 Date: 8-Aug-2022 *
+* Online (Heroku) Link: ________________________________________________________
+* ********************************************************************************/
 const express = require("express");
 const path = require("path");
 const exphbs = require("express-handlebars");
 const data = require("./modules/collegeData.js");
+const clientSessions = require("client-sessions");
 
 const app = express();
 
@@ -31,6 +40,15 @@ app.engine('.hbs', exphbs.engine({
 app.set('view engine', '.hbs');
 
 app.use(express.static("public"));
+
+// Setup client-sessions
+app.use(clientSessions({
+    cookieName: "session", // this is the object name that will be added to 'req'
+    secret: "assignment6_web322", // this should be a long un-guessable string.
+    duration: 6 * 60 * 1000, // duration of the session in milliseconds (2 minutes)
+    activeDuration: 1000 * 60 // the session will be extended by this many ms each request (1 minute)
+}));
+
 app.use(express.urlencoded({extended: true}));
 
 app.use(function(req,res,next){
@@ -39,12 +57,67 @@ app.use(function(req,res,next){
     next();
 });
 
+const user = {
+    username: "sampleuser",
+    password: "samplepassword",
+    email: "sampleuser@example.com"
+};
 
+
+  
+  // The login route that adds the user to the session
+  app.post("/login", (req, res) => {
+    const username = req.body.username;
+    const password = req.body.password;
+  
+    if(username === "" || password === "") {
+      return res.render("login", { errorMsg: "Missing credentials.", layout: false });
+    }
+  
+    if(username === user.username && password === user.password){
+  
+      req.session.user = {
+        username: user.username,
+        email: user.email
+      };
+  
+      res.redirect("/students");
+    } else {
+  
+      res.render("login", { errorMsg: "Invalid username or password!", layout: false});
+    }
+  });
+  
+ 
+  app.get("/logout", function(req, res) {
+    req.session.reset();
+    res.redirect("/login");
+  });
+
+function ensureLogin(req, res, next) {
+    if (!req.session.user) {
+      res.redirect("/login");
+    } else {
+      next();
+    }
+};
 
 app.get("/", (req,res) => {
-    res.render("home");
+    if(!req.session.user)
+    {
+        res.render("home");
+    }
+    else{
+        res.render("home",{user:req.session.user});
+    }
 });
+app.get("/home",(req,res)=>{
+    res.render("home");
+})
 
+app.get("/login",(req,res)=>{
+    res.render("login");
+})
 app.get("/about", (req,res) => {
     res.render("about");
 });
@@ -53,66 +126,82 @@ app.get("/htmlDemo", (req,res) => {
     res.render("htmlDemo");
 });
 
-app.get("/students", (req, res) => {
-    data.getAllStudents().then(function(data){
+app.get("/students", ensureLogin,(req, res) => {
+
+
+    if (req.query.course) {
+        
+        data.getStudentsByCourse(req.query.course).then((data) => {
+            res.render("students", {students: data,user:req.session.user});
+        }).catch((err) => {
+            res.render("students", {message: "no results",user:req.session.user});
+        });
+    }else{
+        data.getAllStudents().then(function(data){
+            if(data.length>0)
+            {
+                res.render("students",{students:data,user:req.session.user});
+            }
+            else
+            {
+                res.render("students",{message: "no results",user:req.session.user});
+            }
+        }).catch(err =>{
+            res.render("students",{message: "no results",user:req.session.user});
+        });
+    }
+});
+
+app.get("/courses", ensureLogin,(req,res) => {
+    data.getCourses().then(function(data){
         if(data.length>0)
         {
-            res.render("students",{students:data});
+            res.render("courses",{courses:data,user:req.session.user});
         }
         else
         {
-            res.render("students",{message: "no results"});
+            res.render("courses",{message: "no results",user:req.session.user});
         }
     }).catch(err =>{
-        res.render("students",{message: "no results"});
+        res.render("students",{message: "no results",user:req.session.user});
     });
 });
 
-app.get("/courses", (req,res) => {
-    data.getCourses().then(function(data){
-        if(data.length>0)
-        {
-            res.render("courses",{courses:data});
-        }
-        else
-        {
-            res.render("students",{message: "no results"});
-        }
-    }).catch(err =>{
-        res.render("students",{message: "no results"});
-    });
+app.get("/courses/add",ensureLogin,(req,res) => {
+    res.render("addCourse",{user:req.session.user});
 });
-app.get("/courses/add",(req,res) => {
-    res.render("addCourse");
-});
-app.get("/students/add", (req,res) => {
+
+
+app.get("/students/add", ensureLogin,(req,res) => {
     data.getCourses().then(function(data){
-        res.render("addStudent", {courses: data});
+        res.render("addStudent", {courses: data,user:req.session.user});
     }).catch(function(){
-        res.render("addStudent", {courses: []});
+        res.render("addStudent", {courses: [],user:req.session.user});
     });
     
 });
 
-app.post("/courses/add", (req, res) => {
+app.post("/courses/add", ensureLogin,(req, res) => {
     data.addCourse(req.body).then(()=>{
       res.redirect("/courses");
     });
   });
 
 
-app.post("/students/add", (req, res) => {
+app.post("/students/add", ensureLogin,(req, res) => {
     data.addStudent(req.body).then(()=>{
       res.redirect("/students");
     });
   });
 
 
-  app.get("/student/:studentNum", (req, res) => {
+  app.get("/student/:studentNum",ensureLogin, (req, res) => {
     // initialize an empty object to store the values 
     let viewData = {};
-    data.getStudentByNum(req.params.studentNum).then((data) => { if (data) {
-    viewData.student = data; //store student data in the "viewData" object as "student" 
+    data.getStudentByNum(req.params.studentNum).then((data) => { 
+    console.log("student",data);
+    if (data) {
+        viewData.student = data; //store student data in the "viewData" object as "student" 
     } else {
         viewData.student = null; // set student to null if none were returned 
         }}).catch(() => {
@@ -132,48 +221,53 @@ app.post("/students/add", (req, res) => {
     }).then(() => {
     if (viewData.student == null) { // if no student - return an error
     res.status(404).send("Student Not Found"); } else {
-    res.render("student", { viewData: viewData }); // render the "student" view 
+    res.render("student", { viewData: viewData,user:req.session.user }); // render the "student" view 
     }
     });});
 
-app.post("/course/update", (req, res) => {
+app.post("/course/update", ensureLogin,(req, res) => {
+
+    req.body.courseId = parseInt(req.body.courseId);
+
     data.updateCourse(req.body).then(() => {
         res.redirect("/courses");
     });
 });
-app.post("/student/update", (req, res) => {
+
+app.post("/student/update", ensureLogin,(req, res) => {
     data.updateStudent(req.body).then(() => {
         res.redirect("/students");
     });
 });
 
 
-app.get("/course/:id", (req, res) => {
-    data.getCourseById(req.params.id).then((data) => {
-        if(data.length > 0)
+app.get("/course/:id", ensureLogin,(req, res) => {
+
+    data.getCourseById(req.params.id).then((d) => {
+        if(d)
         {
-            res.render("course", { course: data }); 
+            res.render("course", { course: d,user:req.session.user }); 
         }
         else
         {
             res.status(404).send("Course Not Found");
         }
     }).catch((err) => {
-        res.render("course",{message:"no results"}); 
+        res.render("course",{message:"no results",user:req.session.user}); 
     });
 });
 
-app.get("/course/delete/:id", (req, res) => {
+app.get("/course/delete/:id",ensureLogin, (req, res) => {
     data.deleteCourseById(req.params.id).then(() => {
-        res.render("/courses")
+        res.redirect("/courses");
     }).catch((err) => {
         res.status(500).send("Unable to Remove Course / Course not found");
     });
 });
 
-app.get("/student/delete/:studentNum", (req, res) => {
-    data.deleteStudentByNum(req.params.id).then(() => {
-        res.render("/students")
+app.get("/student/delete/:studentNum", ensureLogin,(req, res) => {
+    data.deleteStudentByNum(req.params.studentNum).then(() => {
+        res.redirect("/students");
     }).catch((err) => {
         res.status(500).send("Unable to Remove Student / Student not found");
     });
@@ -191,5 +285,3 @@ data.initialize().then(function(){
 }).catch(function(err){
     console.log("unable to start server: " + err);
 });
-
-app.listen(HTTP_PORT);
